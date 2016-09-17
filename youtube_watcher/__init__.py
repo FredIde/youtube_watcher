@@ -19,6 +19,7 @@ from .cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
+VERSION = '0.2'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
@@ -54,7 +55,7 @@ def search(query, site=''):
 
 
 def color_progress(percentage, start='|', end='|', fill='[_blue] [/_blue]',
-                   anti_fill=' ', prefix=' ', suffix=''):
+                   anti_fill=' ', prefix=' ', suffix='', stderr=True):
     width = (shutil.get_terminal_size().columns-len(prefix)-len(suffix)
              -len(start)-len(end)-3)
     perc = percentage / 100 * width
@@ -62,7 +63,10 @@ def color_progress(percentage, start='|', end='|', fill='[_blue] [/_blue]',
     anti_char = anti_fill*math.floor((width-perc))
     bar = '{}{}{}{}'.format(start, fill_char, anti_char, end)
     string = '{} {} {}'.format(prefix, bar, suffix)
-    cprint('\r{}'.format(string), '', '', file=sys.stderr)
+    if stderr:
+        cprint('\r{}'.format(string), '', '', file=sys.stderr)
+    else:
+        cprint('{}'.format(string), '', '', file=sys.stdout)
     return None
 
 
@@ -148,6 +152,7 @@ def _update(*user, args=None):
         key = f.read().split('\n')[0]
     for user in parsedata:
         updated = 0
+        info = 0
         videos = []
         cprint('\rUpdating [bold]{}[/bold]'.format(user), '', '', sys.stderr)
         for i in range(10):
@@ -158,7 +163,10 @@ def _update(*user, args=None):
                     videos = get_playlist_videos(data[user]['playlistid'],
                                                  key)
             except (urllib.error.URLError, socket.gaierror):
-                continue
+                cprint('\rUpdating [bold]{}[/bold]. Try {} '.format(user, i),
+                       '', '', sys.stderr)
+                raise
+                #continue
             except Exception:
                 raise
             else:
@@ -168,12 +176,28 @@ def _update(*user, args=None):
                 continue
             updated += 1
             data[user]['videos'].append(item)
-        cprint('\rUpdating [bold]{}[/bold] - {} videos.'.format(user, updated),
-               '', '', sys.stderr)
+        for index, item in enumerate(videos):
+            perc = index/len(videos)*100
+            color_progress(perc, '', '', anti_fill='[_grey] [/_grey]',
+                           prefix='Updating [bold]{}[/bold] '.format(user))
+            inf = get_vid_info(item, key)
+            stats = inf['items'][0]['statistics']
+            details = inf['items'][0]['contentDetails']
+            data[user]['videos'][index]['likecount'] = stats['likeCount']
+            data[user]['videos'][index]['dislikecount'] = stats['dislikeCount']
+            data[user]['videos'][index]['duration'] = details['duration']
         print()
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     return None
+
+
+def get_vid_info(item, api_key):
+    vid_id = item['id']
+    req = make_request('https://www.googleapis.com/youtube/v3/videos?id={}'
+                       '&key={}&part=statistics,'
+                       'contentDetails'.format(vid_id, api_key))
+    return json.loads(req)
 
 
 def video_in(item, data):
@@ -211,7 +235,7 @@ def _list(*user, args=None):
             continue
         if key == 'c':
             contin = check_list(info[name]['videos'], name, args.s,
-                                args.regex)
+                                args.regex, args.reverse)
             if contin:
                 continue
             return None
@@ -230,8 +254,9 @@ def mark_all_watched(name):
     return None
 
 
-def check_list(videos, name, show_seen=False, reg=None):
-    videos.reverse()
+def check_list(videos, name, show_seen=False, reg=None, reverse=False):
+    if reverse:
+        videos.reverse()
     width = shutil.get_terminal_size().columns
     height = shutil.get_terminal_size().lines
     for index, video in enumerate(videos):
@@ -248,9 +273,28 @@ def check_list(videos, name, show_seen=False, reg=None):
                    'v={}'.format(video['id']))
         cprint('[_dblue]{}[/_dblue]\n\n'.format(
                vid_url.center(width)))
+        likes = int(video['likecount'])
+        dislikes = int(video['dislikecount'])
+        total = likes + dislikes
+        color_progress(likes/total*100, '', '', '[_green] [/_green]',
+                       '[_red] [/_red]', 'Likes / Dislikes ',
+                       '{}/{}\n'.format(likes, dislikes))
+        time = video['duration'].split('T')[1]
+        tdata = []
+        for c in time:
+            try:
+                v = int(c)
+            except ValueError:
+                tdata.append(v)
+        if len(tdata) < 3:
+            tdata.append(0)
+
+        tstring = '{:0>2}:{:0>2}:{:0>2}'.format(*tdata[::-1])
+        print('Duration: {}\n'.format(tstring))
+
 
         pos = 2+math.ceil(len(video['title'])/width)
-        print(video['desc'][:int((height-8-(pos-3))*width)].replace('\n', '- '),
+        print(video['desc'][:int((height-10-(pos-3))*width)].replace('\n', '- '),
               '...')
 
         print('\033[{};1H'.format(pos), end='')
@@ -294,10 +338,12 @@ def check_list(videos, name, show_seen=False, reg=None):
                     break
             else:
                 downloaded = True
+                video['seen'] = True
                 continue
 
             try_again = True
-    videos.reverse() 
+    if reverse:
+        videos.reverse() 
 
     os.system('clear')
     title = 'Finished {} video list'.format(name)
@@ -393,7 +439,8 @@ def get_playlist_videos(pid, key):
         page_string = ('&pageToken={}'.format(page_token) if page_token
                        is not None else '')
         resp = make_request('https://www.googleapis.com/youtube/v3/'
-                            'playlistItems?part=snippet&playlistId'
+                            'playlistItems?part=snippet,contentDetails'
+                            '&playlistId'
                             '={}&maxResults=50&key={}{}'.format(pid,
                             key, page_string))
         page_info = json.loads(resp)
@@ -434,6 +481,10 @@ def main():
                         ' they are marked as watched.')
     parser.add_argument('-r', '--regex', default=None,
                         help='Only shows video titles that match this regex.')
+    parser.add_argument('-R', '--reverse', default=False,
+                        help='Reverses the video list when using list.',
+                        action='store_true')
+    parser.add_argument('--version', action='version', version=VERSION)
     #parser.add_argument('params', default=None, nargs='+')
     args = parser.parse_args()
     command = '_{}'.format(args.command[0])

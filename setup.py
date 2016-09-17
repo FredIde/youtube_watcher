@@ -5,11 +5,11 @@ from setuptools import setup
 
 
 setup(name='youtube_watcher',
-        version='0.1b',
+        version='0.2',
         description='A simple program to list new vidoes and download them',
         author='Steven J. Core',
         author_email='42Echo6Alpha@gmail.com',
-        license='GPL',
+        license='GPL3.0',
         packages=['youtube_watcher'],
         zip_safe=False,
         include_package_data=True,
