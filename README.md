@@ -72,3 +72,11 @@ This will go through each video where you can mark as watched or download. Just 
 
 
 If you want to remove a user, use `youtube_watcher remove username`
+
+
+# Screenshots
+
+![1](screenshots/1.png?raw=true)
+![2](screenshots/2.png?raw=true)
+![3](screenshots/3.png?raw=true)
+![4](screenshots/4.png?raw=true)
