@@ -77,6 +77,7 @@ If you want to remove a user, use `youtube_watcher remove username`
 ## Params
 
 `youtube_watcher list NAME -s`  -s will show all videos, even the ones you have seen.
+
 `youtube_watcher list NAME -r "REGEX"` -r will only show videos when their title match the regex.
 
 # Screenshots
