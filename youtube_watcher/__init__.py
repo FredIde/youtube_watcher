@@ -19,7 +19,7 @@ from .cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.2'
+VERSION = '0.2.1'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
@@ -286,8 +286,11 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
                 v = int(c)
             except ValueError:
                 tdata.append(v)
-        if len(tdata) < 3:
-            tdata.append(0)
+        for i in range(3):
+            try:
+                a = tdata[i]
+            except IndexError:
+                tdata.append(0)
 
         tstring = '{:0>2}:{:0>2}:{:0>2}'.format(*tdata[::-1])
         print('Duration: {}\n'.format(tstring))
