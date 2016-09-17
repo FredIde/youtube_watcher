@@ -74,6 +74,11 @@ This will go through each video where you can mark as watched or download. Just 
 If you want to remove a user, use `youtube_watcher remove username`
 
 
+## Params
+
+`youtube_watcher list NAME -s`  -s will show all videos, even the ones you have seen.
+`youtube_watcher list NAME -r "REGEX"` -r will only show videos when their title match the regex.
+
 # Screenshots
 
 ![1](screenshots/1.png?raw=true)
