@@ -13,16 +13,25 @@ import urllib.request
 import urllib
 import socket
 import re
+import ssl
 import subprocess
 from bs4 import BeautifulSoup
 from .cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.2.1'
+VERSION = '0.3.1'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
+    """make_request
+    Makes a url request with headers / data.
+    params:
+        url: str: The base url.
+        data: dict: The data to go along with the url.
+        headers: dict: The headers to go along with the req.
+        method: str: The request method.
+    """
     data = urllib.parse.urlencode(data).encode('utf-8')
     request = urllib.request.Request(url, data=data, headers=headers)
     request.method = method
@@ -31,6 +40,12 @@ def make_request(url, data={}, headers={}, method='GET'):
 
 
 def search(query, site=''):
+    """search
+    Scrapes a google search for results.
+    params:
+        query: str: The query to search for.
+        site: str: The site to use.
+    """
     if site != '':
         site = 'site:{} '.format(site)
     query = urllib.parse.quote('{}{}'.format(site, query))
@@ -56,6 +71,18 @@ def search(query, site=''):
 
 def color_progress(percentage, start='|', end='|', fill='[_blue] [/_blue]',
                    anti_fill=' ', prefix=' ', suffix='', stderr=True):
+    """color_progress
+    Creates a color progress bar.
+    params:
+        percentage: int: The percentage of the progress bar to fill.
+        start: str: The char to place at the start of the bar.
+        end: str: The char to place at the end of the bar.
+        fill: str: The string to fill with the bar with.
+        anti_fill: str: The string to fill the empty areas of the bar with.
+        prefix: str: The string to put before the bar.
+        suffix: str: The string to put after the bar.
+        stderr: bool: True if it should print to stderr.
+    """
     width = (shutil.get_terminal_size().columns-len(prefix)-len(suffix)
              -len(start)-len(end)-3)
     perc = percentage / 100 * width
@@ -77,6 +104,8 @@ def _add(*name, args=None):
         url = name
         _type = 'user'
     elif name.startswith('PL'):
+        if 'youtube.com' in name:
+            name = 'PL{}'.format(name.split('PL')[1])
         _type = 'playlist'
         url = name
     else:
@@ -129,6 +158,7 @@ def _add(*name, args=None):
 
 
 def _update(*user, args=None):
+    width = shutil.get_terminal_size().columns
     user = ' '.join(user)
     if user == '':
         user = None
@@ -153,6 +183,7 @@ def _update(*user, args=None):
     for user in parsedata:
         updated = 0
         info = 0
+        downloaded = False
         videos = []
         cprint('\rUpdating [bold]{}[/bold]'.format(user), '', '', sys.stderr)
         for i in range(10):
@@ -162,30 +193,41 @@ def _update(*user, args=None):
                 if data[user]['type'] == 'playlist':
                     videos = get_playlist_videos(data[user]['playlistid'],
                                                  key)
-            except (urllib.error.URLError, socket.gaierror):
+            except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
                 cprint('\rUpdating [bold]{}[/bold]. Try {} '.format(user, i),
                        '', '', sys.stderr)
-                raise
-                #continue
+                continue
             except Exception:
-                raise
+                continue
             else:
+                downloaded = True
                 break
+        if not downloaded:
+            print('Failed')
+            continue
         for index, item in enumerate(videos):
             if video_in(item, data[user]['videos']):
                 continue
             updated += 1
             data[user]['videos'].append(item)
         for index, item in enumerate(videos):
+            if not args.all and video_in(item, data[user]['videos']):
+                continue
             perc = index/len(videos)*100
             color_progress(perc, '', '', anti_fill='[_grey] [/_grey]',
                            prefix='Updating [bold]{}[/bold] '.format(user))
             inf = get_vid_info(item, key)
+            if inf is None:
+                print('Failed')
+                break
             stats = inf['items'][0]['statistics']
             details = inf['items'][0]['contentDetails']
             data[user]['videos'][index]['likecount'] = stats['likeCount']
             data[user]['videos'][index]['dislikecount'] = stats['dislikeCount']
             data[user]['videos'][index]['duration'] = details['duration']
+        sys.stderr.write('\r{}'.format(' '*width))
+        cprint('\rUpdating [bold]{}[/bold] - [bold]{}[/bold] '
+                'new videos.'.format(user, updated), '', '', sys.stderr)
         print()
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
@@ -194,10 +236,16 @@ def _update(*user, args=None):
 
 def get_vid_info(item, api_key):
     vid_id = item['id']
-    req = make_request('https://www.googleapis.com/youtube/v3/videos?id={}'
-                       '&key={}&part=statistics,'
-                       'contentDetails'.format(vid_id, api_key))
-    return json.loads(req)
+    for i in range(10):
+        try:
+            req = make_request('https://www.googleapis.com/youtube/v3/'
+                               'videos?id={}&key={}&part=statistics,'
+                               'contentDetails'.format(vid_id, api_key))
+        except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
+            continue
+        else:
+            return json.loads(req)
+    return None
 
 
 def video_in(item, data):
@@ -277,22 +325,24 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
         dislikes = int(video['dislikecount'])
         total = likes + dislikes
         color_progress(likes/total*100, '', '', '[_green] [/_green]',
-                       '[_red] [/_red]', 'Likes / Dislikes ',
+                       '[_red] [/_red]', 'Likes / Dislikes  ',
                        '{}/{}\n'.format(likes, dislikes))
         time = video['duration'].split('T')[1]
         tdata = []
+        v = ''
         for c in time:
             try:
-                v = int(c)
+                check = int(c)
+                v += c
             except ValueError:
-                tdata.append(v)
+                tdata.append(int(v))
+                v = ''
         for i in range(3):
             try:
                 a = tdata[i]
             except IndexError:
-                tdata.append(0)
-
-        tstring = '{:0>2}:{:0>2}:{:0>2}'.format(*tdata[::-1])
+                tdata.insert(0, 0)
+        tstring = '{:0>2}:{:0>2}:{:0>2}'.format(*tdata)
         print('Duration: {}\n'.format(tstring))
 
 
@@ -467,6 +517,15 @@ def _key(key, args=None):
     return None
 
 
+def _users(*_, args=None):
+    with open('{}/data.json'.format(FILE_DIR)) as f:
+        data = json.loads(f.read())
+    for user in data:
+        length = len(data[user]['videos'])
+        cprint('[bold]{}[/bold] {} videos.'.format(user, length))
+    return None
+
+
 def main():
     # Create files / dir
     if not os.path.exists(FILE_DIR):
@@ -487,8 +546,9 @@ def main():
     parser.add_argument('-R', '--reverse', default=False,
                         help='Reverses the video list when using list.',
                         action='store_true')
+    parser.add_argument('-a', '--all', help='Updates all videos '
+                        'when you update', action='store_true', default=False)
     parser.add_argument('--version', action='version', version=VERSION)
-    #parser.add_argument('params', default=None, nargs='+')
     args = parser.parse_args()
     command = '_{}'.format(args.command[0])
     params = args.command[1:]
