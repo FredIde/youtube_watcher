@@ -11,40 +11,20 @@ By default it will only list the ones you haven't seen.
 
 `sudo apt-get install python3`
 
-## 2 - Install setuptools
 
-**Installing with apt-get**
+## 2 - Install with pip
 
-`sudo apt-get install python3-setuptools`
+`pip install youtube_watcher`
+ 
 
-or **Installing with PIP**
-
-Install pip.
-
-You can either use `sudo apt-get install python3-pip`
-
-if that does not work follow https://pip.pypa.io/en/stable/installing/
-
-Be sure to use python3 `get-pip.py`
-
-
-Then use `pip3 install setuptools`
-
-
-## 3 - Install
-Run `pip install youtube_watcher` (recommended)
-
-or Run `python3 setup.py install`
-
-
-## 4 - Get API key
+## 3 - Get API key
 You will need your own API key for youtube. I will not let you use mine.
 
 Go to https://console.developers.google.com/  sign up and get a youtube v3 key.
 
 
 # Running
-Before you do anything you should get the youtube v3 api key from [step 4](#4-get-api-key)
+Before you do anything you should get the youtube v3 api key from [step 3](#3-get-api-key)
 
 Use `youtube_watcher key API_KEY` **This is required**
 
