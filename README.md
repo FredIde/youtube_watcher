@@ -32,7 +32,10 @@ Then use `pip3 install setuptools`
 
 
 ## 3 - Install
-Run `python3 setup.py install`
+Run `pip install youtube_watcher` (recommended)
+
+or Run `python3 setup.py install`
+
 
 ## 4 - Get API key
 You will need your own API key for youtube. I will not let you use mine.
