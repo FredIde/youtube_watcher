@@ -7,14 +7,17 @@ By default it will only list the ones you haven't seen.
 
 # Installing
 
-## 1 - Make sure you have python3 (python3.4)
+## 1 - Make sure you have python3 (python3.4) and pip
 
 `sudo apt-get install python3`
+`sudo apt-get install python3-pip`
 
 
 ## 2 - Install with pip
 
-`pip install youtube_watcher`
+Make sure this is pip3
+
+`pip3 install youtube_watcher`
  
 
 ## 3 - Get API key
