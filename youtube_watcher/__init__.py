@@ -16,11 +16,11 @@ import re
 import ssl
 import subprocess
 from bs4 import BeautifulSoup
-from .cprint import cprint
+from youtube_watcher.cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.3.2'
+VERSION = '0.4.1'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
@@ -135,6 +135,10 @@ def _add(*name, args=None):
         return None
     if _type == 'user':
         name = url.split('/')[-1]
+        username = name
+        check_name = input('Name \033[1m{}\033[0m or: '.format(name))
+        if check_name != '':
+            name = check_name
     if _type == 'playlist':
         with open('{}/api_key'.format(FILE_DIR), 'r') as f:
             key = f.read().split('\n')[0]
@@ -151,6 +155,8 @@ def _add(*name, args=None):
         data[name]['playlistid'] = url
         data[name]['url'] = ('https://www.youtube.com/playlist?'
                              'list={}'.format(url))
+    if _type == 'user':
+        data[name]['username'] = username
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     cprint('[bold]{}[/bold] has been added.'.format(name))
@@ -168,7 +174,9 @@ def _update(*user, args=None):
         return None
     if not os.path.exists('{}/api_key'.format(FILE_DIR)):
         cprint('[red][bold]Could not find an api_key file. '
-               'Please use youtube_watcher key API_KEY')
+                'Please use youtube_watcher key API_KEY\n'
+                'https://console.developers.google.com/ to get a youtube '
+                'v3 key')
         return None
     with open('{}/data.json'.format(FILE_DIR), 'r') as f:
         data = json.loads(f.read())
@@ -189,7 +197,11 @@ def _update(*user, args=None):
         for i in range(10):
             try:
                 if data[user]['type'] == 'user':
-                    videos = get_user_videos(user, key)
+                    if 'username' in  data[user]:
+                        vidname = data[user]['username']
+                    else:
+                        vidname = user
+                    videos = get_user_videos(vidname, key)
                 if data[user]['type'] == 'playlist':
                     videos = get_playlist_videos(data[user]['playlistid'],
                                                  key)
@@ -461,7 +473,7 @@ def _remove(*name, args=None):
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     
-    cprint('Removed [bold]{}[/bold]'.format(close))
+    cprint('Removed [bold]{}[/bold]'.format(close[0]))
     return None
 
 
@@ -519,7 +531,9 @@ def _users(*_, args=None):
         data = json.loads(f.read())
     for user in data:
         length = len(data[user]['videos'])
-        cprint('[bold]{}[/bold] {} videos.'.format(user, length))
+        seen = len([x for x in data[user]['videos'] if x['seen']])
+        cprint('[bold]{}[/bold] {}/{} (seen/total)'.format(user, seen,
+               length))
     return None
 
 
