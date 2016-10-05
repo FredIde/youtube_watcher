@@ -20,7 +20,7 @@ from .cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.3.1'
+VERSION = '0.3.2'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
@@ -185,7 +185,7 @@ def _update(*user, args=None):
         info = 0
         downloaded = False
         videos = []
-        cprint('\rUpdating [bold]{}[/bold]'.format(user), '', '', sys.stderr)
+        cprint('\r Updating [bold]{}[/bold]'.format(user), '', '', sys.stderr)
         for i in range(10):
             try:
                 if data[user]['type'] == 'user':
@@ -194,7 +194,7 @@ def _update(*user, args=None):
                     videos = get_playlist_videos(data[user]['playlistid'],
                                                  key)
             except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
-                cprint('\rUpdating [bold]{}[/bold]. Try {} '.format(user, i),
+                cprint('\r Updating [bold]{}[/bold]. Try {} '.format(user, i),
                        '', '', sys.stderr)
                 continue
             except Exception:
@@ -206,16 +206,13 @@ def _update(*user, args=None):
             print('Failed')
             continue
         for index, item in enumerate(videos):
-            if video_in(item, data[user]['videos']):
+            if video_in(item, data[user]['videos']) and not args.all:
                 continue
             updated += 1
             data[user]['videos'].append(item)
-        for index, item in enumerate(videos):
-            if not args.all and video_in(item, data[user]['videos']):
-                continue
             perc = index/len(videos)*100
             color_progress(perc, '', '', anti_fill='[_grey] [/_grey]',
-                           prefix='Updating [bold]{}[/bold] '.format(user))
+                           prefix=' Updating [bold]{}[/bold] '.format(user))
             inf = get_vid_info(item, key)
             if inf is None:
                 print('Failed')
@@ -226,7 +223,7 @@ def _update(*user, args=None):
             data[user]['videos'][index]['dislikecount'] = stats['dislikeCount']
             data[user]['videos'][index]['duration'] = details['duration']
         sys.stderr.write('\r{}'.format(' '*width))
-        cprint('\rUpdating [bold]{}[/bold] - [bold]{}[/bold] '
+        cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
                 'new videos.'.format(user, updated), '', '', sys.stderr)
         print()
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
