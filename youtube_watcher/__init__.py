@@ -20,7 +20,7 @@ from youtube_watcher.cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.4.1'
+VERSION = '0.5.0'
 
 
 def make_request(url, data={}, headers={}, method='GET'):
@@ -218,22 +218,10 @@ def _update(*user, args=None):
             print('Failed')
             continue
         for index, item in enumerate(videos):
-            if video_in(item, data[user]['videos']) and not args.all:
+            if video_in(item, data[user]['videos']):
                 continue
             updated += 1
             data[user]['videos'].append(item)
-            perc = index/len(videos)*100
-            color_progress(perc, '', '', anti_fill='[_grey] [/_grey]',
-                           prefix=' Updating [bold]{}[/bold] '.format(user))
-            inf = get_vid_info(item, key)
-            if inf is None:
-                print('Failed')
-                break
-            stats = inf['items'][0]['statistics']
-            details = inf['items'][0]['contentDetails']
-            data[user]['videos'][index]['likecount'] = stats['likeCount']
-            data[user]['videos'][index]['dislikecount'] = stats['dislikeCount']
-            data[user]['videos'][index]['duration'] = details['duration']
         sys.stderr.write('\r{}'.format(' '*width))
         cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
                 'new videos.'.format(user, updated), '', '', sys.stderr)
@@ -241,6 +229,11 @@ def _update(*user, args=None):
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     return None
+
+def parse_seconds(seconds):
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    return '{:0>2}:{:0>2}:{:0>2}'.format(round(h), round(m), round(s))
 
 
 def get_vid_info(item, api_key):
@@ -252,8 +245,7 @@ def get_vid_info(item, api_key):
                                'contentDetails'.format(vid_id, api_key))
         except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
             continue
-        else:
-            return json.loads(req)
+        return json.loads(req)
     return None
 
 
@@ -314,8 +306,15 @@ def mark_all_watched(name):
 def check_list(videos, name, show_seen=False, reg=None, reverse=False):
     if reverse:
         videos.reverse()
+    with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
+        settings = json.loads(f.read())
     width = shutil.get_terminal_size().columns
     height = shutil.get_terminal_size().lines
+    text = ('[M]ark as watched. [S]kip. [D]ownload. Download [A]udio. '
+            '[Q]uit')
+    print(text)
+    if reg is not None:
+        reg = re.compile(reg, re.I)
     for index, video in enumerate(videos):
         if video['seen'] and not show_seen:
             continue
@@ -323,47 +322,11 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
             match = re.match(reg, video['title'])
             if match is None:
                 continue
-        os.system('clear')
-        cprint('[_blue]{}[/_blue]'.format(
-               video['title'].center(width)))
-        vid_url = ('https://www.youtube.com/watch?'
-                   'v={}'.format(video['id']))
-        cprint('[_dblue]{}[/_dblue]\n\n'.format(
-               vid_url.center(width)))
-        likes = int(video['likecount'])
-        dislikes = int(video['dislikecount'])
-        total = likes + dislikes
-        color_progress(likes/total*100, '', '', '[_green] [/_green]',
-                       '[_red] [/_red]', 'Likes / Dislikes  ',
-                       '{}/{}\n'.format(likes, dislikes))
-        time = video['duration'].split('T')[1]
-        tdata = []
-        v = ''
-        for c in time:
-            try:
-                check = int(c)
-                v += c
-            except ValueError:
-                tdata.append(int(v))
-                v = ''
-        for i in range(3):
-            try:
-                a = tdata[i]
-            except IndexError:
-                tdata.insert(0, 0)
-        tstring = '{:0>2}:{:0>2}:{:0>2}'.format(*tdata)
-        print('Duration: {}\n'.format(tstring))
-
-
-        pos = 2+math.ceil(len(video['title'])/width)
-        print(video['desc'][:int((height-10-(pos-3))*width)].replace('\n', '- '),
-              '...')
-
-        print('\033[{};1H'.format(pos), end='')
-
-        text = ('[M]ark as watched. [S]kip. [D]ownload. Download [A]udio. '
-                '[Q]uit: ')
-        key = input('{}{}'.format(' '*int(width/2-(len(text)/2)), text))
+        
+        title = video['title']
+        cprint('\n[green]┌-[/green] [bold]{}[/bold]'.format(title))
+        cprint('[green]└> [/green]', suffix='')
+        key = input('')
         key = key.lower()
         if key == 'q':
             break
@@ -379,14 +342,17 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
         while not downloaded:
             if key == 'd':
                 params = 'youtube-dl {}'.format(url)
+                if 'name' in settings:
+                    params += ' -o {}'.format(settings['name'])
                 proc = subprocess.Popen(params.split(' '),
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT)
             if key == 'a':
                 params = ('youtube-dl --extract-audio '
                           '--audio-format mp3 {}'.format(url))
-                proc = subprocess.Popen(['youtube-dl', '--extract-audio',
-                                         '--audio-format', 'mp3', url],
+                if 'name' in settings:
+                    params += ' -o {}'.format(settings['name'])
+                proc = subprocess.Popen(params.split(' '),
                                          stdout=subprocess.PIPE,
                                          stderr=subprocess.STDOUT)
             if proc is not None:
@@ -431,12 +397,11 @@ def handle_download(proc, video, try_again=False):
     size = shutil.get_terminal_size()
     width = size.columns
     height = size.lines
-    move = '\033[{};1H'.format(height)
     if try_again:
         text = 'Trying again.'
     else:
         text = 'Starting download.'
-    sys.stderr.write('\r{}{} Press Ctrl+C to cancel.'.format(move, text))
+    sys.stderr.write('\r{} Press Ctrl+C to cancel.'.format(text))
     tmp = b''
     downloaded = False
     while proc.poll() is None:
@@ -537,6 +502,18 @@ def _users(*_, args=None):
     return None
 
 
+def _setting(setting, *value, args=None):
+    value = ' '.join(value)
+    with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
+        settings = json.loads(f.read())
+
+    settings[setting] = value
+
+    with open('{}/settings.json'.format(FILE_DIR), 'w') as f:
+        f.write(json.dumps(settings))
+    return None
+
+
 def main():
     # Create files / dir
     if not os.path.exists(FILE_DIR):
@@ -544,6 +521,10 @@ def main():
 
     if not os.path.exists('{}/data.json'.format(FILE_DIR)):
         with open('{}/data.json'.format(FILE_DIR), 'w') as f:
+            f.write('{}')
+
+    if not os.path.exists('{}/settings.json'.format(FILE_DIR)):
+        with open('{}/settings.json'.format(FILE_DIR), 'w') as f:
             f.write('{}')
 
 
@@ -559,7 +540,7 @@ def main():
                         action='store_true')
     parser.add_argument('-a', '--all', help='Updates all videos '
                         'when you update', action='store_true', default=False)
-    parser.add_argument('--version', action='version', version=VERSION)
+    parser.add_argument('-v', '--version', action='version', version=VERSION)
     args = parser.parse_args()
     command = '_{}'.format(args.command[0])
     params = args.command[1:]
