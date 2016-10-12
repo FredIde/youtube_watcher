@@ -66,8 +66,6 @@ If you want to remove a user, use `youtube_watcher remove username`
 
 `youtube_watcher list NAME -r "REGEX"` -r will only show videos when their title match the regex.
 
-`youtube_watcher update -a` -a will update all information, not just new videos.
-
 
 # Screenshots
 
