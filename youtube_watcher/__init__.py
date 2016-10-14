@@ -22,10 +22,10 @@ from youtube_watcher.cprint import cprint
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.6.1'
+VERSION = '0.7.0'
 
 
-class UI:
+class VideoList:
     def __init__(self, title, videos, show_seen, reg):
         self.title = title 
         self.show_seen = show_seen
@@ -42,13 +42,12 @@ class UI:
         curses.noecho()
         curses.cbreak()
         self.screen.keypad(True)
-        
         curses.start_color()
         curses.use_default_colors()
         curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
-        curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
-        curses.init_pair(3, curses.COLOR_CYAN, curses.COLOR_BLACK)
-        curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_GREEN, -1)
+        curses.init_pair(3, curses.COLOR_CYAN, -1)
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)
 
     def shutdown(self):
         curses.echo()
@@ -84,8 +83,10 @@ class UI:
                             | curses.A_BOLD)
         instructions = ('[D]ownload. Download [A]udio. Mark as [S]een. '
                         'Mark as [U]n-seen. [Q]uit.')
-        self.screen.addstr(instructions.center(self.width)) 
-        for y, i in enumerate(self.vidlist[self.off:self.off+self.height-4]):
+        self.screen.addstr(instructions.center(self.width))
+        self.end = 4
+        videos = self.vidlist[self.off:self.off+self.height-self.end]
+        for y, i in enumerate(videos):
             if y == self.pos:
                 opts = curses.A_REVERSE
             else:
@@ -126,7 +127,7 @@ class UI:
         if self.pos + self.off == len(self.vidlist)-1:
             return None
         self.pos += 1
-        if self.pos == self.height-4:
+        if self.pos == self.height-self.end:
             self.pos -= 1
             self.off += 1
         return None
@@ -198,6 +199,77 @@ class UI:
         return None
 
 
+class UserList:
+    def __init__(self, users):
+        self.users = sorted([x for x in users])
+        self.off = 0
+        self.pos = 0
+        self.data = users
+        self.screen = curses.initscr()
+        self.screen.keypad(True)
+        curses.noecho()
+        curses.cbreak()
+        curses.start_color()
+        curses.use_default_colors()
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)
+
+    def shutdown(self):
+        curses.echo()
+        curses.nocbreak()
+        self.screen.keypad(False)
+        curses.endwin()
+        return None
+
+    def main(self):
+        while True:
+            char = str(self.create_list())
+            func = getattr(self, 'k_{}'.format(char), None)
+            if func is not None:
+                quit = func()
+                if quit:
+                    return None
+            else:
+                return char
+        return None
+
+    def create_list(self):
+        self.screen.clear()
+        self.screen.refresh()
+        self.height, self.width = self.screen.getmaxyx()
+        self.screen.addstr('List of users'.center(self.width),
+                           curses.color_pair(1) | curses.A_BOLD)
+        instr = 'Mark all videos as [S]een. [Q]uit. [Enter] Check list'
+        self.screen.addstr(instr.center(self.width))
+        for y, i in enumerate(self.users[self.off:self.off+self.height-4]):
+            if y == self.pos:
+                options = curses.A_REVERSE
+            else:
+                options = 0
+            if all(x['seen'] for x in self.data[i]['videos']):
+                options |= curses.A_DIM
+            title = ' {} '.format(i).ljust(self.width)
+            self.screen.addstr(y+3, 0, title, options)
+        return self.screen.getch()
+
+    def k_258(self):
+        if self.pos + self.off == len(self.users)-1:
+            return None
+        self.pos += 1
+        if self.pos == self.height-4:
+            self.pos -= 1
+            self.off += 1
+        return None
+
+    def k_259(self):
+        self.pos -= 1
+        if self.pos < 0:
+            self.pos = 0
+            self.off -= 1
+        if self.off < 0:
+            self.off = 0
+        return None
+
+
 def make_request(url, data={}, headers={}, method='GET'):
     """make_request
     Makes a url request with headers / data.
@@ -244,35 +316,14 @@ def search(query, site=''):
     return urls
 
 
-def color_progress(percentage, start='|', end='|', fill='[_blue] [/_blue]',
-                   anti_fill=' ', prefix=' ', suffix='', stderr=True):
-    """color_progress
-    Creates a color progress bar.
-    params:
-        percentage: int: The percentage of the progress bar to fill.
-        start: str: The char to place at the start of the bar.
-        end: str: The char to place at the end of the bar.
-        fill: str: The string to fill with the bar with.
-        anti_fill: str: The string to fill the empty areas of the bar with.
-        prefix: str: The string to put before the bar.
-        suffix: str: The string to put after the bar.
-        stderr: bool: True if it should print to stderr.
-    """
-    width = (shutil.get_terminal_size().columns-len(prefix)-len(suffix)
-             -len(start)-len(end)-3)
-    perc = percentage / 100 * width
-    fill_char = fill*math.ceil(perc)
-    anti_char = anti_fill*math.floor((width-perc))
-    bar = '{}{}{}{}'.format(start, fill_char, anti_char, end)
-    string = '{} {} {}'.format(prefix, bar, suffix)
-    if stderr:
-        cprint('\r{}'.format(string), '', '', file=sys.stderr)
-    else:
-        cprint('{}'.format(string), '', '', file=sys.stdout)
-    return None
-
-
 def _add(*name, args=None):
+    """_add
+    Adds a new user to watch.
+    
+    params:
+        *name: tuple: The name of the user to add.
+        args: Namespace: The arguments passed into the script.
+    """
     name = ' '.join(name)
     if 'youtube.com/user/' in name:
         url = name
@@ -338,6 +389,14 @@ def _add(*name, args=None):
 
 
 def _update(*user, args=None):
+    """_update
+    Updates a specific user or all of them.
+    
+    params:
+        *user: tuple: The username to update. If not specified,
+                      updates all of them.
+        args: Namespace: The other arguments passed to the script.
+    """
     width = shutil.get_terminal_size().columns
     user = ' '.join(user)
     if user == '':
@@ -391,23 +450,29 @@ def _update(*user, args=None):
         if not downloaded:
             print('Failed')
             continue
-        data[user]['videos'].reverse()
         for index, item in enumerate(videos[::-1]):
             if video_in(item, data[user]['videos']):
+                item['seen'] = True
                 continue
             updated += 1
-            data[user]['videos'].insert(0, item)
+        data[user]['videos'] = videos
         sys.stderr.write('\r{}'.format(' '*width))
         cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
                 'new videos.'.format(user, updated), '', '', sys.stderr)
         print()
-        data[user]['videos'].reverse()
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     return None
 
 
 def get_vid_info(item, api_key):
+    """get_vid_info
+    Gets information about a video.
+
+    params:
+        item: dict: The video item.
+        api_key: str: The api key the user has set.
+    """
     vid_id = item['id']
     for i in range(10):
         try:
@@ -421,6 +486,13 @@ def get_vid_info(item, api_key):
 
 
 def video_in(item, data):
+    """video_in
+    Checks if a video item is in the data
+    
+    params:
+        item: dict: Video item.
+        data: dict: A dictionary of all videos.
+    """
     for vid in data:
         if vid['id'] == item['id']:
             return True
@@ -428,6 +500,13 @@ def video_in(item, data):
 
 
 def _list(*user, args=None):
+    """_list
+    Lists all of the users the person is watching.
+
+    params:
+        *user: tuple: The name of the user.
+        args: Namespace: The other arguments passed.
+    """
     user = ' '.join(user)
     if user == '':
         user = None
@@ -440,42 +519,62 @@ def _list(*user, args=None):
         if len(close) == 0:
             cprint('[red]There are no users to list[/red]')
             return None
-        info = {close[0]:data[close[0]]}
-    width = shutil.get_terminal_size().columns
-    for name in info:
-        os.system('clear')
-        cprint('[_blue][bold]{}[/_blue][/bold]'.format(name.center(width)))
-        text = '[C]heck video list. [M]ark all as watched. [S]kip: '
-        key = input('{}{}'.format(' '*int(width/2-(len(text)/2)), text))
-        key = key.lower()
-        if key == 's':
+        info = {x:data[x] for x in close}
+    if len(info) == 1:
+        name = list(info.keys())[0]
+        check_list(info[name]['videos'], name, args.s, args.regex,
+                   args.reverse, single=True)
+        return None
+    pos = 0
+    off = 0
+    while True:
+        ui = UserList(info)
+        ui.pos = pos
+        ui.off = off
+        try:
+            key = int(ui.main())
+        except (KeyboardInterrupt, Exception):
+            ui.shutdown()
+            raise
+        if key == 10:
+            name = ui.users[ui.off+ui.pos]
+            check_list(info[name]['videos'], name, args.s, args.regex,
+                       args.reverse, True)
+            ui.screen.refresh()
+            off = ui.off
+            pos = ui.pos
             continue
-        if key == 'm':
-            mark_all_watched(name)
+        if key in [113, 27]:
+            ui.shutdown()
+            break
+        if key == 115:
+            name = ui.users[ui.off+ui.pos]
+            mark_all_watched(info[name]['videos'])
+            off = ui.off
+            pos = ui.pos
             continue
-        if key == 'c':
-            contin = check_list(info[name]['videos'], name, args.s,
-                                args.regex, args.reverse)
-            if contin:
-                continue
-            return None
-    return None
-
-
-def mark_all_watched(name):
-    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
-        data = json.loads(f.read())
-
-    for video in data[name]['videos']:
-        video['seen'] = True
-
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     return None
 
 
+def mark_all_watched(videos):
+    """mark_all_watched
+    Marks all of the videos in the list as watched.
 
-def check_list(videos, name, show_seen=False, reg=None, reverse=False):
+    params:
+        videos: list: A list of videos to mark as watched.
+    """
+    for video in videos:
+        video['seen'] = True
+    return None
+
+
+def check_list(videos, name, show_seen=False, reg=None, reverse=False,
+               single=False):
+    """check_list
+    Lists all of the videos from a user.
+    """
     if not reverse:
         videos.reverse()
     with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
@@ -483,7 +582,7 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
     
 
     try:
-        ui = UI(name, videos, show_seen, reg)
+        ui = VideoList(name, videos, show_seen, reg)
         key = ui.main()
     except KeyboardInterrupt:
         ui.shutdown()
@@ -501,6 +600,8 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
     
+    if single:
+        return False
     size = shutil.get_terminal_size()
     width = size.columns
     text = '[C]ontinue. [Q]uit? '
@@ -512,6 +613,17 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False):
 
 
 def handle_download(proc, ui, title, try_again=False):
+    """handle_download
+    Handles the youtube-dl process.
+
+    params:
+        proc: A subprocess process of youtube-dl.
+        ui: A reference to the VideoList class in use.
+        title: str: The title of the video.
+        try_again: bool:
+            True: Will try again if failed.
+            False: Will not try again.
+    """
     tmp = b''
     downloaded = False
     while proc.poll() is None:
@@ -537,6 +649,13 @@ def handle_download(proc, ui, title, try_again=False):
 
 
 def _remove(*name, args=None):
+    """_remove
+    Removes a specific user from the list.
+
+    params:
+        *name: tuple: The name of the video.
+        args: Namespace: The other arguments passed.
+    """
     name = ' '.join(name)
     with open('{}/data.json'.format(FILE_DIR), 'r') as f:
         data = json.loads(f.read())
@@ -556,6 +675,9 @@ def _remove(*name, args=None):
 
 
 def _clear(*_, args=None):
+    """_clear
+    Removes all data.
+    """
     os.system('rm {}/data.json'.format(FILE_DIR))
     return None
 
@@ -573,6 +695,13 @@ def get_user_videos(user, key):
 
 
 def get_playlist_videos(pid, key):
+    """get_playlist_videos
+    Returns a list of videos from a playlist.
+
+    params:
+        pid: int: The ID of the pid.
+        key: str: The api key the user set.
+    """
     page_token = None
     videos = []
     while True:
@@ -597,6 +726,13 @@ def get_playlist_videos(pid, key):
 
 
 def _key(key, args=None):
+    """_key
+    Sets the api key.
+
+    params:
+        key: str: The key to use.
+        args: Namespace: The arguments passed to the script.
+    """
     with open('{}/api_key'.format(FILE_DIR), 'w') as f:
         f.write(key)
 
@@ -605,6 +741,12 @@ def _key(key, args=None):
 
 
 def _users(*_, args=None):
+    """_users
+    Lists all of the users.
+
+    params:
+        args: Namespace: The other arguments passed to the script.
+    """
     with open('{}/data.json'.format(FILE_DIR)) as f:
         data = json.loads(f.read())
     for user in data:
@@ -616,6 +758,14 @@ def _users(*_, args=None):
 
 
 def _setting(setting, *value, args=None):
+    """_setting
+    Adds a setting to the setting file.
+
+    params:
+        setting: str: The key of the setting.
+        *value: tuple: A tuple, which will be joined by space.
+        args: namespace: Other args passed to the script.
+    """
     value = ' '.join(value)
     with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
         settings = json.loads(f.read())
@@ -639,7 +789,6 @@ def main():
     if not os.path.exists('{}/settings.json'.format(FILE_DIR)):
         with open('{}/settings.json'.format(FILE_DIR), 'w') as f:
             f.write('{}')
-
 
     parser = argparse.ArgumentParser()
     parser.add_argument('command', nargs='+')
