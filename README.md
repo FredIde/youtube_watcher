@@ -2,8 +2,9 @@
 
 A script to list and keep track of youtube user videos.
 
-By default it will only list the ones you haven't seen.
+You can download videos or download them as audio with a single keystroke.
 
+By default it will only show the videos you have not seen. This can be changed with the -s flag. The seen videos will be greyed out.
 
 # Installing
 
