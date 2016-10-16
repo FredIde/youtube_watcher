@@ -6,6 +6,14 @@ You can download videos or download them as audio with a single keystroke.
 
 By default it will only show the videos you have not seen. This can be changed with the -s flag. The seen videos will be greyed out.
 
+# Features
+
+- [x] Easily show new videos or show all videos.
+- [x] Show videos based on regex matches.
+- [x] Download videos or download as audio.
+- [x] Download more than one video at once.
+- [x] Mark as favorite and list only favorite videos.
+
 # Installing
 
 ## 1 - Make sure you have python3 (python3.4) and pip
@@ -60,6 +68,25 @@ This will go through each video where you can mark as watched or download. Just 
 
 If you want to remove a user, use `youtube_watcher remove username`
 
+# Key combo's
+
+**In the video list**
+
+- a - Download as audio.
+- d - Download as video+audio
+- s - Mark as seen.
+- u - Mark as un-seen.
+- r - Remove video from the list.
+- q - Quit list.
+- f - Mark as favorite.
+- space - Mark as selected. This list will be used for keys a,d,s,u,f
+
+**User list**
+
+- Enter - Start showing list.
+- s - Mark all videos as seen.
+- q - Quit.
+
 
 ## Params
 
@@ -67,6 +94,7 @@ If you want to remove a user, use `youtube_watcher remove username`
 
 `youtube_watcher list NAME -r "REGEX"` -r will only show videos when their title match the regex.
 
+`youtube_watcher list NAME -f` -f will only show favorited vidoes.
 
 # Screenshots
 
