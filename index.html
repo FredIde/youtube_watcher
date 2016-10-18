@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <title>Youtube watcher by Sjc1000</title>
+  </head>
+
+  <body>
+    <header>
+      <div class="inner">
+        <h1>Youtube watcher</h1>
+        <h2>Watches youtube users for new videos</h2>
+        <a href="https://github.com/Sjc1000/youtube_watcher" class="button"><small>View project on</small> GitHub</a>
+      </div>
+    </header>
+
+    <div id="content-wrapper">
+      <div class="inner clearfix">
+        <section id="main-content">
+          <h1>
+<a id="youtube-watcher" class="anchor" href="#youtube-watcher" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Youtube Watcher</h1>
+
+<p>A script to list and keep track of youtube user videos.</p>
+
+<p>You can download videos or download them as audio with a single keystroke.</p>
+
+<p>By default it will only show the videos you have not seen. This can be changed with the -s flag. The seen videos will be greyed out.</p>
+
+<h1>
+<a id="features" class="anchor" href="#features" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Features</h1>
+
+<ul>
+<li>[x] Easily show new videos or show all videos.</li>
+<li>[x] Show videos based on regex matches.</li>
+<li>[x] Download videos or download as audio.</li>
+<li>[x] Download more than one video at once.</li>
+<li>[x] Mark as favorite and list only favorite videos.</li>
+</ul>
+
+<h1>
+<a id="installing" class="anchor" href="#installing" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Installing</h1>
+
+<h2>
+<a id="1---make-sure-you-have-python3-python34-and-pip" class="anchor" href="#1---make-sure-you-have-python3-python34-and-pip" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>1 - Make sure you have python3 (python3.4) and pip</h2>
+
+<p><code>sudo apt-get install python3</code>
+<code>sudo apt-get install python3-pip</code></p>
+
+<h2>
+<a id="2---install-with-pip" class="anchor" href="#2---install-with-pip" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>2 - Install with pip</h2>
+
+<p>Make sure this is pip3</p>
+
+<p><code>pip3 install youtube_watcher</code></p>
+
+<h2>
+<a id="3---get-api-key" class="anchor" href="#3---get-api-key" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>3 - Get API key</h2>
+
+<p>You will need your own API key for youtube. I will not let you use mine.</p>
+
+<p>Go to <a href="https://console.developers.google.com/">https://console.developers.google.com/</a>  sign up and get a youtube v3 key.</p>
+
+<h1>
+<a id="running" class="anchor" href="#running" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Running</h1>
+
+<p>Before you do anything you should get the youtube v3 api key from <a href="#3-get-api-key">step 3</a></p>
+
+<p>Use <code>youtube_watcher key API_KEY</code> <strong>This is required</strong></p>
+
+<p>Add a new user with <code>youtube_watcher add USER NAME</code></p>
+
+<p>This can be a direct link to the users page or a playlist ID or just a name and my program will search for it.</p>
+
+<p><strong>Examples</strong></p>
+
+<pre><code>youtube_watcher add TeamFourStar
+youtube_watcher add https://youtube.com/user/TeamFourStar
+youtube_watcher add PL6EC7B047181AD013
+</code></pre>
+
+<p>You will then need to update the video list with <code>youtube_watcher update NAME</code></p>
+
+<p>NAME can be left blank to update all of them or can be the name of a user.
+You can specify some of the name for this, my program will find the closest match.</p>
+
+<p>After you update you want to list the videos. By default this will only list the vidoes you have not marked as watched.</p>
+
+<p><code>youtube_watcher list NAME</code></p>
+
+<p>NAME can be left blank again to list all of them or can be any part of the user name.</p>
+
+<p>This will go through each video where you can mark as watched or download. Just follow the on screen instructions.</p>
+
+<p>If you want to remove a user, use <code>youtube_watcher remove username</code></p>
+
+<h1>
+<a id="key-combos" class="anchor" href="#key-combos" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Key combo's</h1>
+
+<p><strong>In the video list</strong></p>
+
+<ul>
+<li>a - Download as audio.</li>
+<li>d - Download as video+audio</li>
+<li>s - Mark as seen.</li>
+<li>u - Mark as un-seen.</li>
+<li>r - Remove video from the list.</li>
+<li>q - Quit list.</li>
+<li>f - Mark as favorite.</li>
+<li>space - Mark as selected. This list will be used for keys a,d,s,u,f</li>
+</ul>
+
+<p><strong>User list</strong></p>
+
+<ul>
+<li>Enter - Start showing list.</li>
+<li>s - Mark all videos as seen.</li>
+<li>q - Quit.</li>
+</ul>
+
+<h2>
+<a id="params" class="anchor" href="#params" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Params</h2>
+
+<p><code>youtube_watcher list NAME -s</code>  -s will show all videos, even the ones you have seen.</p>
+
+<p><code>youtube_watcher list NAME -r "REGEX"</code> -r will only show videos when their title match the regex.</p>
+
+<p><code>youtube_watcher list NAME -f</code> -f will only show favorited vidoes.</p>
+
+<h1>
+<a id="screenshots" class="anchor" href="#screenshots" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Screenshots</h1>
+
+<p><img src="screenshots/1.png?raw=true" alt="1">
+<img src="screenshots/2.png?raw=true" alt="2">
+<img src="screenshots/3.png?raw=true" alt="3">
+<img src="screenshots/4.png?raw=true" alt="4">
+<img src="screenshots/5.png?raw=true" alt="5"></p>
+        </section>
+
+        <aside id="sidebar">
+          <a href="https://github.com/Sjc1000/youtube_watcher/zipball/master" class="button">
+            <small>Download</small>
+            .zip file
+          </a>
+          <a href="https://github.com/Sjc1000/youtube_watcher/tarball/master" class="button">
+            <small>Download</small>
+            .tar.gz file
+          </a>
+
+          <p class="repo-owner"><a href="https://github.com/Sjc1000/youtube_watcher"></a> is maintained by <a href="https://github.com/Sjc1000">Sjc1000</a>.</p>
+
+          <p>This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
+        </aside>
+      </div>
+    </div>
+
+  
+  </body>
+</html>
