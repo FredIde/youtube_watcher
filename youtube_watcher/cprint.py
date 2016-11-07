@@ -46,6 +46,7 @@ gen = {
     'white': 97
 }
 
+
 colors = {x: '\033[{}m'.format(gen[x]) for x in gen}
 
 

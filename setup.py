@@ -5,7 +5,7 @@ from setuptools import setup
 
 
 setup(name='youtube_watcher',
-        version='0.9.1',
+        version='0.9.6',
         description='A simple program to list new YouTube videos and download them',
         author='Steven J. Core',
         url='https://github.com/Sjc1000/youtube_watcher',

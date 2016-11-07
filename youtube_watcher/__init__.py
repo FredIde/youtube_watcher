@@ -1,34 +1,38 @@
 #!/usr/bin/env python3
 
 
-import os
-import sys
-import json
 import argparse
-import shutil
-import time
-import math
+import curses
 import difflib
-import urllib.request
-import urllib
-import socket
+import json
+import math
+import os
 import re
+import shutil
+import socket
 import ssl
 import subprocess
+import sys
 import threading
-import curses
+import time
+import urllib
+import urllib.request
+import webbrowser
 import youtube_dl
-import difflib
 from bs4 import BeautifulSoup
 from youtube_watcher.cprint import cprint
 from youtube_watcher.threads import asthread
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.9.1'
+VERSION = '0.9.6'
 
 
 class VoidLogger:
+    """VoidLogger
+    Youtube-dl accepts a logger class. This just pass's on all
+    of the messages to prevent the stdout messing up my cli.
+    """
     def debug(self, msg):
         pass
 
@@ -41,19 +45,33 @@ class VoidLogger:
 
 class VideoList:
     def __init__(self, title, videos, show_seen, reg, fav):
+        """__init__
+        Creates the video list.
+
+        params:
+            title: str: The title to display at the top.
+            videos: list: A list of videos.
+            show_seen: bool:
+                True: Will show videos you have marked as seen.
+                False: Will not show videos marked as seen.
+            reg: str: Regex to match the titles with.
+            fav: bool:
+                True: Will only show favorited videos.
+                False: Will not only show favorited videos.
+        """
         self.title = title 
         self.show_seen = show_seen
         if reg is not None:
             self.regex = re.compile(reg, re.I)
         else:
             self.regex = None
-        self.show_favorite = fav
-        self.pos = 0
-        self.off = 0
-        self.selected = []
-        self.videos = videos
         self.data = {}
         self.downloads = {}
+        self.off = 0
+        self.pos = 0
+        self.selected = []
+        self.show_favorite = fav
+        self.videos = videos
         self.screen = curses.initscr()
         curses.noecho()
         curses.cbreak()
@@ -67,6 +85,9 @@ class VideoList:
         curses.init_pair(4, curses.COLOR_YELLOW, -1)
 
     def shutdown(self):
+        """shutdown
+        Shuts down curses and ends the window.
+        """
         curses.echo()
         curses.nocbreak()
         self.screen.keypad(False)
@@ -74,6 +95,9 @@ class VideoList:
         return None
 
     def main(self):
+        """main
+        The main loop and key handling of the program.
+        """
         while True:
             char = str(self.create_list())
             func = getattr(self, 'k_{}'.format(char), None)
@@ -88,6 +112,14 @@ class VideoList:
         return None
 
     def create_list(self, getch=True):
+        """create_list
+        Generates a list of the videos.
+
+        params:
+            getch: bool:
+                True: Waits for user input.
+                False: Does not wait for user input.
+        """
         if self.show_seen:
             self.vidlist = self.videos
         else:
@@ -153,6 +185,70 @@ class VideoList:
         self.screen.refresh()
         return None
 
+    @asthread()
+    def start_download(self, item, audio=False):
+        """start_download
+        Starts downloading a video.
+
+        params:
+            item: dict: A dictionary of info about a video.
+            audio: bool:
+                True: Download the video as audio.
+                False: Download as video and audio.
+        """
+        title = item['title']
+        url = 'https://www.youtube.com/watch?v={}'.format(item['id'])
+        options = {
+            'logger': VoidLogger(),
+            'progress_hooks': [lambda i: self.handle_program(title, i)]}
+        if audio:
+            options['format'] = 'bestaudio/best'
+            options['postprocessors'] = [{'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192'}]
+        self.data[str(title)] = {'info': {}, 'perc': '0%', 'status': 'pending',
+                                 'type': 'audio' if audio else 'video',
+                                 'finished': 0}
+        ydl = youtube_dl.YoutubeDL(options)
+        ydl.download([url])
+        self.create_list(False)
+        return None
+
+    def handle_program(self, title, i):
+        """handle_program
+        Handles the downloading info from youtube-dl.
+
+        params:
+            title: str: The title of the video.
+            i: dict: A dictionary of the youtube-dl info.
+        """
+        self.data[title]['status'] = i['status']
+        self.data[title]['info'] = i
+        if i['status'] == 'downloading':
+            perc = i['downloaded_bytes'] / i['total_bytes'] * 100
+            self.data[title]['perc'] = str(round(perc)) + '%'
+        if i['status'] == 'finished':
+            self.data[title]['finished'] += 1
+            if (self.data[title]['type'] == 'video'
+            and self.data[title]['finished'] == 2):
+                self.data[title]['perc'] = ':)'
+            if (self.data[title]['type'] == 'audio'
+            and self.data[title]['finished'] == 1):
+                self.data[title]['perc'] = ':)'
+        self.create_list(False)
+        return None
+
+    @property
+    def active_rows(self):
+        """active_rows
+        Returns a list of active rows.
+        """
+        active = []
+        if self.selected == []:
+            return [self.vidlist[self.off+self.pos]]
+        return self.selected
+
+
     def k_32(self):
         title = self.vidlist[self.off+self.pos]
         if title in self.selected:
@@ -160,6 +256,17 @@ class VideoList:
         else:
             self.selected.append(title)
         self.k_258()
+        return None
+    
+    def k_111(self):
+        savout = os.dup(1)
+        os.close(1)
+        os.open(os.devnull, os.O_RDWR)
+        for item in self.active_rows:
+            url = 'https://www.youtube.com/watch?v={}'.format(item['id'])
+            webbrowser.open(url)
+        os.dup2(savout, 1)
+        self.selected = []
         return None
     
     def k_106(self):
@@ -189,60 +296,16 @@ class VideoList:
         return None
 
     def k_97(self):
-        for item in self.get_active():
+        for item in self.active_rows:
             self.start_download(item, True)
         self.selected = []
         return None
-
-    @asthread()
-    def start_download(self, item, audio=False):
-        title = item['title']
-        url = 'https://www.youtube.com/watch?v={}'.format(item['id'])
-        options = {
-            'logger': VoidLogger(),
-            'progress_hooks': [lambda i: self.handle_program(title, i)]}
-        if audio:
-            options['format'] = 'bestaudio/best'
-            options['postprocessors'] = [{'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192'}]
-        self.data[str(title)] = {'info': {}, 'perc': '0%', 'status': 'pending',
-                                 'type': 'audio' if audio else 'video',
-                                 'finished': 0}
-        ydl = youtube_dl.YoutubeDL(options)
-        ydl.download([url])
-        self.create_list(False)
-        return None
     
     def k_100(self):
-        for item in self.get_active():
+        for item in self.active_rows:
             self.start_download(item)
         self.selected = []
         return None
-
-    def handle_program(self, title, i):
-        self.data[title]['status'] = i['status']
-        self.data[title]['info'] = i
-        if i['status'] == 'downloading':
-            perc = i['downloaded_bytes'] / i['total_bytes'] * 100
-            self.data[title]['perc'] = str(round(perc)) + '%'
-        if i['status'] == 'finished':
-            self.data[title]['finished'] += 1
-            if (self.data[title]['type'] == 'video'
-            and self.data[title]['finished'] == 2):
-                self.data[title]['perc'] = ':)'
-            if (self.data[title]['type'] == 'audio'
-            and self.data[title]['finished'] == 1):
-                self.data[title]['perc'] = ':)'
-        self.create_list(False)
-        return None
-
-    @property
-    def active_rows(self):
-        active = []
-        if self.selected == []:
-            return [self.vidlist[self.off+self.pos]]
-        return self.selected
 
     def k_410(self):
         return None
@@ -502,12 +565,14 @@ def _update(*user, args=None):
         parsedata = {close[0]:data[close[0]]}
     with open('{}/api_key'.format(FILE_DIR), 'r') as f:
         key = f.read().split('\n')[0]
+    updated_info = {}
     for user in parsedata:
-        updated = 0
         info = 0
-        downloaded = False
+        updated = 0
         videos = []
-        cprint('\r Updating [bold]{}[/bold]'.format(user), '', '', sys.stderr)
+        if not args.simple:
+            cprint('\r Updating [bold]{}[/bold]'.format(user), '', '',
+                   sys.stderr)
         for i in range(10):
             try:
                 if data[user]['type'] == 'user':
@@ -515,36 +580,74 @@ def _update(*user, args=None):
                         vidname = data[user]['username']
                     else:
                         vidname = user
-                    videos = get_user_videos(vidname, key)
+                    videos = get_user_videos(vidname, key,
+                                             data[user]['videos'])
                 if data[user]['type'] == 'playlist':
                     videos = get_playlist_videos(data[user]['playlistid'],
-                                                 key)
+                                                 key, data[user]['videos'])
             except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
-                cprint('\r Updating [bold]{}[/bold]. Try {} '.format(user, i),
-                       '', '', sys.stderr)
+                if not args.simple:
+                    cprint('\r Updating [bold]{}[/bold]. Try {} '.format(
+                           user, i), '', '', sys.stderr)
                 continue
             except Exception:
                 continue
             else:
-                downloaded = True
                 break
-        if not downloaded:
-            print('Failed')
+        else:
+            if not args.simple:
+                print('Failed')
+            else:
+                print(0)
+                return 0
             continue
         for index, item in enumerate(videos):
-            if video_in(item, data[user]['videos']):
-                item['seen'] = data[user]['videos'][index]['seen']
-                continue
-            updated += 1
-        videos.reverse()
+            if not video_in(item, data[user]['videos']):
+                updated += 1
+        for index, item in enumerate(data[user]['videos']):
+            if video_in(item, videos):
+                ind = get_video_index(videos, item['id'])
+                videos[ind] = item
         data[user]['videos'] = videos
-        sys.stderr.write('\r{}'.format(' '*width))
-        cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
-                'new videos.'.format(user, updated), '', '', sys.stderr)
-        print()
+        updated_info[user] = updated
+        if not args.simple:
+            sys.stderr.write('\r{}'.format(' '*width))
+        if not args.simple:
+            cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
+                   'new videos.'.format(user, updated), '', '', sys.stderr)
+            print()
+        else:
+            print(updated)
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
+    return updated_info
+
+
+def _daemon(*user, args=None):
+    while True:
+        updated_info = _update(*user, args=args)
+        for person, new in updated_info.items():
+            if new == 0:
+                continue
+            subprocess.call([
+                'notify-send', 'youtube_watcher - {}'.format(person),
+                '{} New videos.'.format(new), '-u', 'critical'])
+        time.sleep(3600)
     return None
+
+
+def get_video_index(video_list, video_id):
+    """get_video_index
+    Finds the index of a video based on ID.
+
+    params:
+        video_list: list: A list of videos.
+        video_id: int: The ID of the video.
+    """
+    for index, video in enumerate(video_list):
+        if video['id'] == video_id:
+            return index
+    raise IndexError
 
 
 def get_vid_info(item, api_key):
@@ -559,7 +662,7 @@ def get_vid_info(item, api_key):
     for i in range(10):
         try:
             req = make_request('https://www.googleapis.com/youtube/v3/'
-                               'videos?id={}&key={}&part=statistics,'
+                               'videos?id={}&key={}&part='
                                'contentDetails'.format(vid_id, api_key))
         except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
             continue
@@ -573,7 +676,7 @@ def video_in(item, data):
     
     params:
         item: dict: Video item.
-        data: dict: A dictionary of all videos.
+        data: list: A list of all videos.
     """
     for vid in data:
         if vid['id'] == item['id']:
@@ -657,7 +760,7 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False,
     """check_list
     Lists all of the videos from a user.
     """
-    if not reverse:
+    if reverse:
         videos.reverse()
     with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
         settings = json.loads(f.read())
@@ -671,7 +774,7 @@ def check_list(videos, name, show_seen=False, reg=None, reverse=False,
     else:
         ui.shutdown() 
     
-    if not reverse:
+    if reverse:
         videos.reverse()
 
     with open('{}/data.json'.format(FILE_DIR), 'r') as f:
@@ -728,7 +831,7 @@ def _clear(*_, args=None):
     return None
 
 
-def get_user_videos(user, key):
+def get_user_videos(user, key, old_videos):
     resp = make_request('https://www.googleapis.com/youtube/v3/channels?'
                         'key={}'
                         '&part=contentDetails&forUsername={}'.format(
@@ -736,11 +839,11 @@ def get_user_videos(user, key):
     info = json.loads(resp)
     upload_id = info['items'][0]['contentDetails']['relatedPlaylists']['up'
                 'loads']
-    videos = get_playlist_videos(upload_id, key)
+    videos = get_playlist_videos(upload_id, key, old_videos)
     return videos
 
 
-def get_playlist_videos(pid, key):
+def get_playlist_videos(pid, key, old_videos):
     """get_playlist_videos
     Returns a list of videos from a playlist.
 
@@ -754,7 +857,7 @@ def get_playlist_videos(pid, key):
         page_string = ('&pageToken={}'.format(page_token) if page_token
                        is not None else '')
         resp = make_request('https://www.googleapis.com/youtube/v3/'
-                            'playlistItems?part=snippet,contentDetails'
+                            'playlistItems?part=snippet'
                             '&playlistId'
                             '={}&maxResults=50&key={}{}'.format(pid,
                             key, page_string))
@@ -765,9 +868,14 @@ def get_playlist_videos(pid, key):
                     'id': item['snippet']['resourceId']['videoId'],
                     'title': item['snippet']['title']}
             videos.append(data)
-        if 'nextPageToken' not in page_info:
-            break
-        page_token = page_info['nextPageToken']
+            if video_in(data, old_videos):
+                break
+        else:
+            if 'nextPageToken' not in page_info:
+                break
+            page_token = page_info['nextPageToken']
+            continue
+        break
     return videos
 
 
@@ -849,6 +957,8 @@ def main():
     parser.add_argument('-f', '--favorite', default=False, action='store_true',
                         help='Only shows favorited videos.')
     parser.add_argument('-v', '--version', action='version', version=VERSION)
+    parser.add_argument('-S', '--simple', default=False, action='store_true',
+                        help='Provide simple output for some things.')
     args = parser.parse_args()
     command = '_{}'.format(args.command[0])
     params = args.command[1:]

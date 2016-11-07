@@ -79,12 +79,16 @@ If you want to remove a user, use `youtube_watcher remove username`
 - r - Remove video from the list.
 - q - Quit list.
 - f - Mark as favorite.
+- up - Move up in the list.
+- down - Move down in the list.
 - space - Mark as selected. This list will be used for keys a,d,s,u,f
 
 **User list**
 
 - Enter - Start showing list.
 - s - Mark all videos as seen.
+- up - Move up in the list.
+- down - Move down in the list.
 - q - Quit.
 
 
