@@ -4,6 +4,7 @@
 import curses
 import youtube_dl
 import webbrowser
+import re
 from threads import asthread
 
 
@@ -137,6 +138,7 @@ class VideoList(ItemList):
         self.data = {}
         self._vidlist = []
         self.selected = []
+        self.active_title = ''
         super().__init__(title, instructions, videos, [], end=4,
                          show_seen=show_seen, regex=reg,
                          show_favorite=fav)
