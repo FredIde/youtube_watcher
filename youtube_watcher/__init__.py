@@ -16,8 +16,6 @@ import threading
 import time
 import urllib
 import urllib.request
-import webbrowser
-import youtube_dl
 from bs4 import BeautifulSoup
 from cprint import cprint
 from threads import asthread
@@ -31,21 +29,6 @@ VERSION = '0.9.8'
 
 class VideoError(Exception):
     pass
-
-
-class VoidLogger:
-    """VoidLogger
-    Youtube-dl accepts a logger class. This just pass's on all
-    of the messages to prevent the stdout messing up my cli.
-    """
-    def debug(self, msg):
-        pass
-
-    def warning(self, msg):
-        pass
-
-    def error(self, msg):
-        pass
 
 
 def make_request(url, data={}, headers={}, method='GET'):

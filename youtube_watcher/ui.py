@@ -2,7 +2,24 @@
 
 
 import curses
+import youtube_dl
+import webbrowser
 from threads import asthread
+
+
+class VoidLogger:
+    """VoidLogger
+    Youtube-dl accepts a logger class. This just pass's on all
+    of the messages to prevent the stdout messing up my cli.
+    """
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
 
 
 class ItemList:
@@ -143,11 +160,12 @@ class VideoList(ItemList):
         return None
 
     def draw_statusbar(self):
+        active = self.active_title
         if self.vidlist != []:
             perc = round((self.pos+self.off+1)/len(self.vidlist)*100)
             percstring = '({}/{}) {}%'.format(self.pos+self.off+1,
                          len(self.vidlist), perc)
-            if self.active_title in self.data:
+            if active in self.data:
                 status = ' {}'.format(self.data[active]['status'])
                 if '_speed_str' in self.data[active]['info']:
                     inf = self.data[active]['info']
