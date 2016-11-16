@@ -15,56 +15,239 @@ import sys
 import threading
 import time
 import urllib
-import urllib.request
+
+import requests
 from bs4 import BeautifulSoup
-from cprint import cprint
-from threads import asthread
-from ui import VideoList, UserList
-# Yo dawg, I heard you like imports
+
+from youtube_watcher.cprint import cprint
+from youtube_watcher.threads import asthread
+from youtube_watcher.ui import VideoList, UserList
 
 
 FILE_DIR = '{}/.youtube_watcher'.format(os.getenv('HOME'))
-VERSION = '0.9.8'
+VERSION = '0.10.4'
+args = None
 
 
 class VideoError(Exception):
     pass
 
 
-def make_request(url, data={}, headers={}, method='GET'):
-    """make_request
-    Makes a url request with headers / data.
+def vprint(text, verbose_level):
+    """vprint
+    Verbose print. Prints text based on the verbose level you ran
+    the program with.
+
     params:
-        url: str: The base url.
-        data: dict: The data to go along with the url.
-        headers: dict: The headers to go along with the req.
-        method: str: The request method.
+        text: str: The text to print.
+        verbose_level: int: The level of verbosity required to print the
+                            text.
     """
-    data = urllib.parse.urlencode(data).encode('utf-8')
-    request = urllib.request.Request(url, data=data, headers=headers)
-    request.method = method
-    response = urllib.request.urlopen(request)
-    return response.read().decode('utf-8')
+    if args.verbose >= verbose_level:
+        print(text)
+    return None
+
+
+def check_default_files():
+    """check_default_files
+    Checks for the default files that are required for most commands.
+    """
+    if not os.path.exists('{}/data.json'.format(FILE_DIR)):
+        cprint('[red][bold]Could not find a data.json file. '
+               'Please add a user before running this command.')
+        return False
+    if not os.path.exists('{}/api_key'.format(FILE_DIR)):
+        cprint('[red][bold]Could not find an api_key file.'
+               'Use youtube_watcher key API_KEY before running this command.\n'
+               'https://console.developers.google.com/ to get a youtube v3 key')
+        return False
+    return True
+
+
+def get_user_matches(name):
+    """get_user_matches
+    Gets the closest name based on the users you have added.
+
+    params:
+        name: str: The name to get the match from.
+    """
+    name = ' '.join(name)
+    vprint('Attempting to match: "{}"'.format(name), 2)
+    with open('{}/data.json'.format(FILE_DIR)) as f:
+        data = f.read()
+    data = json.loads(data)
+    if  name == '':
+        return data
+    names = list(data.keys())
+    close = difflib.get_close_matches(name, names, 1, 0)
+    if close == []:
+        vprint("Uh oh, couldn't find a match. Using '{}'".format(names[0]), 2)
+        close = names
+    vprint("I suppose '{}' is close enough.".format(close[0]), 2)
+    return {close[0]: data[close[0]]}
+
+
+def get_videos(user, key):
+    """get_videos
+    Gets all of the users videos. It will find their upload playlist then
+    return them.
+
+    params:
+        user: dict: A dictionary of the user.
+        key: str: The api_key to use.
+    """
+    username = user.get('username', user)
+    vprint('Getting {} videos'.format(username), 1)
+    response = requests.get('https://www.googleapis.com/youtube/v3/channels?'
+                            'key={}&part=contentDetails'
+                            '&forUsername={}'.format(key, username))
+    data = response.json()
+    upload_id = data['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+    videos = get_playlist_videos(upload_id, key)
+    return videos
+
+
+def get_playlist_videos(playlist_id, key):
+    """get_playlist_videos
+    Gets the playlist videos based on the playlist id.
+
+    params:
+        playlist_id: str: The id to get the videos from.
+        key: str: The api key to use.
+    """
+    token = ''
+    videos = []
+    vprint('Getting playlist {} videos'.format(playlist_id), 1)
+    while token is not None:
+        page = '&pageToken={}'.format(token) if token != '' else ''
+        vprint('Page token {}'.format(token), 2)
+        response = requests.get('https://www.googleapis.com/youtube/v3/'
+                                'playlistItems?part=snippet&playlistId={}'
+                                '&maxResults=50&key={}{}'.format(playlist_id,
+                                    key, page))
+        info = response.json()
+        pvids = info['items']
+        vprint('Parsing output...', 2)
+        for item in pvids:
+            data = {'seen': False, 'desc': item['snippet']['description'],
+                    'id': item['snippet']['resourceId']['videoId'],
+                    'title': item['snippet']['title']}
+            videos.append(data)
+        token = info.get('nextPageToken', None)
+    return videos
+
+
+def get_updated_count(new, old):
+    """get_updated_count
+    Gets the updated count. It also sets old data to any new videos
+    that are still in the list.
+
+    params:
+        new: list: A list of new videos
+        old: list: A list of old videos
+    """
+    vprint('Getting updated count.', 2)
+    updated = 0
+    for video_index, video in enumerate(new):
+        if not video_in(video, old):
+            updated += 1
+        else:
+            index = get_video_index(video['id'], old)
+            new[video_index] = old[index]
+    return updated, new
+
+
+def video_in(video, items):
+    """video_in
+    Checks if a video is in a list. It checks each video ID.
+
+    params:
+        video: dict: A dictionary of the current video.
+        items: list: A list of dictionaries of videos.
+    """
+    for index, item in enumerate(items):
+        if item['id'] == video['id']:
+            return True
+    return False
+
+
+def get_video_index(vid_id, vid_list):
+    """get_video_index
+    Returns the index of a video based on ID.
+
+    params:
+        vid_id: str: The ID to look for.
+        vid_list: list: A list of videos to check.
+    """
+    for index, item in enumerate(vid_list):
+        if item['id'] == vid_id:
+            return index
+    raise IndexError('Could not find video')
+
+
+def _update(*name):
+    """_update
+    Updates one or more users. This gets a list of new videos and
+    checks it against old videos.
+
+    params:
+        *name: tuple: A space separated tuple of the username.
+    """
+    has_files = check_default_files()
+    if not has_files:
+        vprint("This... shouldn't.... happen.....", 0)
+        return None 
+
+    users = get_user_matches(' '.join(name))
+
+    with open('{}/api_key'.format(FILE_DIR)) as f:
+        key = f.read()
+    with open('{}/data.json'.format(FILE_DIR)) as f:
+        data = json.loads(f.read())
+
+    for user in users:
+        if args.verbose == 0:
+            cprint('\rUpdating [bold]{}[/bold]'.format(user), '', '',
+                   sys.stderr)    
+        vprint('Current Length: {}'.format(len(data[user]['videos'])), 2)
+        try:
+            if data[user]['type'] == 'user':
+                videos = get_videos(data[user], key)
+            elif data[user]['type'] == 'playlist':
+                videos = get_playlist_videos(data[user]['playlistid'], key)
+            else:
+                raise NotImplemented('Getting video for type "{}" is not '
+                                     'supported'.format(data[user]['type']))
+        except VideoError:
+            continue 
+        vprint('Total Length: {}'.format(len(videos)), 2)
+        vprint('Math time!', 2)
+        updated, new_list = get_updated_count(videos, data[user]['videos'])
+        data[user]['videos'] = new_list
+        cprint('\rUpdating [bold]{}[/bold] - [bold]{}[/bold] new '
+               'videos\n'.format(user, updated), '', '', sys.stderr)
+        vprint('Current Length: {}'.format(len(data[user]['videos'])), 2)
+    vprint('Writing new data.', 2)
+    with open('{}/data.json'.format(FILE_DIR), 'w') as f:
+        f.write(json.dumps(data))
+    return None
 
 
 def search(query, site=''):
     """search
-    Scrapes a google search for results.
+    Searches google for a query. Optionally searches a specific site
+    via google.
+
     params:
-        query: str: The query to search for.
-        site: str: The site to use.
+        query: str: The thing to search for.
+        site: str: The website to search via google.
     """
+    vprint('Searching for: {}'.format(query), 2)
     if site != '':
-        site = 'site:{} '.format(site)
-    query = urllib.parse.quote('{}{}'.format(site, query))
-    query_url = 'http://www.google.com/search?safe=off&q={}'.format(query)
-    user_agent = ('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; '
-                  'rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7')
-    request = urllib.request.Request(
-                    query_url, None,
-                    {'User-Agent': user_agent})
-    response = urllib.request.urlopen(request)
-    data = response.read().decode('utf-8')
+        site = 'site:{}'.format(site)
+    response = requests.get('http://www.google.com/search?'
+                            'safe=off&q={}'.format(query))
+    data = response.text
     soup = BeautifulSoup(data, 'html.parser')
     url = soup.find_all('h3')
     urls = []
@@ -77,490 +260,215 @@ def search(query, site=''):
     return urls
 
 
-def _add(*name, args=None):
+def _add(*name):
     """_add
-    Adds a new user to watch.
-    
+    Adds a new user to the data file.
+
     params:
-        *name: tuple: The name of the user to add.
-        args: Namespace: The arguments passed into the script.
+        name: tuple: A space separated typle of the name.
+
+    There will be 3 different types of names you can pass in.
+
+    youtube.com/user/$USERNAME - will add USERNAME to the list.
+    PL$PLAYLISTID - Will add PLAYLISTID to the list.
+    $NAME - Will search google then give you a few choices to add.
     """
     name = ' '.join(name)
-    if 'youtube.com/user/' in name:
+    url = None
+    vprint('Adding new user: {}'.format(name), 1)
+    if 'youtube.com/user' in name:
         url = name
-        _type = 'user'
+        url_type = 'user'
     elif name.startswith('PL'):
-        if 'youtube.com' in name:
-            name = 'PL{}'.format(name.split('PL')[1])
-        _type = 'playlist'
         url = name
+        url_type = 'playlist'
     else:
-        cprint('\rSearching for [bold]{}[/bold]'.format(name))
+        vprint('Searching for user...', 2)
         try:
-            user_results = search(name, 'www.youtube.com/user')
+            urls = search(name, 'www.youtube.com/user')
         except (socket.gaierror, urllib.error.URLError):
-            cprint('[red]Could not find that[/red]')
             return None
-        results = [x.split('?')[0] for x in user_results if x.count('/') == 4]
-        url = None
+        results = [x.split('?')[0] for x in urls if x.count('/') == 4]
         for name in results:
-            cprint('Add: [bold]{}[/bold] [y/n] '.format(name), '', '')
-            correct = input().lower()
+            cprint('Add [bold]{}[/bold]? [y/n] '.format(name), '', '')
+            correct = input()
             if correct == 'y':
                 url = name
                 break
-        _type = 'user'
-
-
-    if not os.path.exists('{}/data.json'.format(FILE_DIR)):
-        data = {}
-    else:
-        with open('{}/data.json'.format(FILE_DIR), 'r') as f:
-            data = json.loads(f.read())
+        url_type = 'user'
     if url is None:
         return None
-    if _type == 'user':
+    
+    vprint('User type: {}'.format(url_type), 1)
+
+    if url_type == 'user':
         name = url.split('/')[-1]
         username = name
-        check_name = input('Name \033[1m{}\033[0m or: '.format(name))
-        if check_name != '':
-            name = check_name
-    if _type == 'playlist':
+    if url_type == 'playlist':
         with open('{}/api_key'.format(FILE_DIR), 'r') as f:
-            key = f.read().split('\n')[0]
-        resp = make_request('https://www.googleapis.com/youtube/v3/'
-                            'playlists?part=snippet&id={}&key={}'.format(name,
-                            key))
-        pl_info = json.loads(resp)
-        name = json.loads(resp)['items'][0]['snippet']['title']
-        check_name = input('Name \033[1m{}\033[0m or: '.format(name))
-        if check_name != '':
-            name = check_name
-    data[name] = {'videos': [], 'url': url, 'type': _type}
-    if _type == 'playlist':
+            key = f.read()
+        vprint('Getting playlist ID...', 1)
+        response = requests.get('https://www.googleapis.com/youtube/v3/'
+                                'playlists?part=snippet&id={}&key={}'.format(
+                                    name, key))
+        info = response.json()
+        name = info['items'][0]['snippet']['title']
+
+    cprint('Name [bold]{}[/bold] or : '.format(name), '', '')
+    check_name = input()
+    name = check_name or name
+    
+    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
+        data = json.loads(f.read())
+
+    data[name] =  {'videos': [], 'url': url, 'type': url_type}
+    if url_type == 'user':
+        data[name]['username'] = username
+    if url_type == 'playlist':
         data[name]['playlistid'] = url
         data[name]['url'] = ('https://www.youtube.com/playlist?'
                              'list={}'.format(url))
-    if _type == 'user':
-        data[name]['username'] = username
+
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
+
     cprint('[bold]{}[/bold] has been added.'.format(name))
+    update = input('Do you wish to update the info now? [y/n] ')
+    if update.lower() == 'y':
+        _update(name)
     return None
 
 
-def _update(*user, args=None):
-    """_update
-    Updates a specific user or all of them.
-    
+def check_list(username):
+    """check_list
+    Lists the videos from a username.
+
     params:
-        *user: tuple: The username to update. If not specified,
-                      updates all of them.
-        args: Namespace: The other arguments passed to the script.
+        username: str: The username to list videos from.
     """
-    width = shutil.get_terminal_size().columns
-    user = ' '.join(user)
-    if user == '':
-        user = None
-    if not os.path.exists('{}/data.json'.format(FILE_DIR)):
-        cprint('[red][bold]Could not find a data.json file. '
-               'Please use add.')
-        return None
-    if not os.path.exists('{}/api_key'.format(FILE_DIR)):
-        cprint('[red][bold]Could not find an api_key file. '
-                'Please use youtube_watcher key API_KEY\n'
-                'https://console.developers.google.com/ to get a youtube '
-                'v3 key')
-        return None
     with open('{}/data.json'.format(FILE_DIR), 'r') as f:
         data = json.loads(f.read())
-    if user is None:
-        parsedata = dict(data)
-    else:
-        names = [x for x in data]
-        close = difflib.get_close_matches(user, data, 1, 0)
-        parsedata = {close[0]:data[close[0]]}
-    with open('{}/api_key'.format(FILE_DIR), 'r') as f:
-        key = f.read().split('\n')[0]
-    updated_info = {}
-    for user in parsedata:
-        if not args.simple:
-            cprint('\r Updating [bold]{}[/bold]'.format(user), '', '',
-                   sys.stderr)
-        try:
-            videos = get_videos(user, key, data[user])
-        except VideoError:
-            continue
-        updated = get_updated_count(videos, data[user])
-        updated_info[user] = updated
-        if not args.simple:
-            sys.stderr.write('\r{}'.format(' '*width))
-        if not args.simple:
-            cprint('\r Updating [bold]{}[/bold] - [bold]{}[/bold] '
-                   'new videos.'.format(user, updated), '', '', sys.stderr)
-            print()
-        else:
-            print(updated)
+    
+    vprint('Checking list: {}'.format(username), 1)
+    show_seen = args.s
+    regex = args.regex
+    favorite = args.favorite
+
+    ui = VideoList(username, data[username]['videos'], show_seen, regex,
+                   favorite)
+    vprint('Starting UI. Yay ncurses.', 2)
+    try:
+        key = ui.main()
+        vprint('Running main UI events.', 2)
+    except (KeyboardInterrupt, Exception):
+        pass
+    vprint('Bye bye UI.', 2)
+    ui.shutdown()
+    
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
-    return updated_info
-
-
-def get_videos(user, key, user_data):
-    videos = []
-    for i in range(10):
-        try:
-            if user_data['type'] == 'user':
-                if 'username' in  user_data:
-                    vidname = user_data['username']
-                else:
-                    vidname = user
-                videos = get_user_videos(vidname, key,
-                                         user_data['videos'])
-            if user_data['type'] == 'playlist':
-                videos = get_playlist_videos(user_data['playlistid'],
-                                             key, user_data['videos'])
-        except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
-                continue
-        else:
-            return videos
-    else:
-        if not args.simple:
-            print('Failed')
-        else:
-            print(0)
-        raise VideoError('Unable to update videos')  
-    return videos
-
-
-def get_updated_count(videos, user_data):
-    updated = 0
-    for index, item in enumerate(videos):
-        if not video_in(item, user_data['videos']):
-            updated += 1
-            user_data['videos'].append(item)
-        else:
-            ind = get_video_index(videos, item['id'])
-            user_data['videos'][ind] = item
-    return updated 
-
-
-def _daemon(*user, args=None):
-    while True:
-        updated_info = _update(*user, args=args)
-        for person, new in updated_info.items():
-            if new == 0:
-                continue
-            subprocess.call([
-                'notify-send', 'youtube_watcher - {}'.format(person),
-                '{} New videos.'.format(new), '-u', 'critical'])
-        time.sleep(3600)
     return None
 
 
-def get_video_index(video_list, video_id):
-    """get_video_index
-    Finds the index of a video based on ID.
-
-    params:
-        video_list: list: A list of videos.
-        video_id: int: The ID of the video.
-    """
-    for index, video in enumerate(video_list):
-        if video['id'] == video_id:
-            return index
-    raise IndexError
-
-
-def get_vid_info(item, api_key):
-    """get_vid_info
-    Gets information about a video.
-
-    params:
-        item: dict: The video item.
-        api_key: str: The api key the user has set.
-    """
-    vid_id = item['id']
-    for i in range(10):
-        try:
-            req = make_request('https://www.googleapis.com/youtube/v3/'
-                               'videos?id={}&key={}&part='
-                               'contentDetails'.format(vid_id, api_key))
-        except (ssl.SSLEOFError, urllib.error.URLError, socket.gaierror):
-            continue
-        return json.loads(req)
-    return None
-
-
-def video_in(item, data):
-    """video_in
-    Checks if a video item is in the data
-    
-    params:
-        item: dict: Video item.
-        data: list: A list of all videos.
-    """
-    for vid in data:
-        if vid['id'] == item['id']:
-            return True
-    return False
-
-
-def _list(*user, args=None):
-    """_list
-    Lists all of the users the person is watching.
-
-    params:
-        *user: tuple: The name of the user.
-        args: Namespace: The other arguments passed.
-    """
-    user = ' '.join(user)
-    if user == '':
-        user = None
-    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
-        data = json.loads(f.read())
-    if user is None:
-        info = data
-    else:
-        close = difflib.get_close_matches(user, data, 1, 0)
-        if len(close) == 0:
-            cprint('[red]There are no users to list[/red]')
-            return None
-        info = {x:data[x] for x in close}
-    if len(info) == 1:
-        name = list(info.keys())[0]
-        check_list(info[name]['videos'], name, args.s, args.regex,
-                   args.reverse, args.favorite, single=True)
+def _list(*user):
+    users = get_user_matches(user)
+    if len(users) == 1:
+        name = list(users.keys())[0]
+        check_list(name)
         return None
+
+    with open('{}/data.json'.format(FILE_DIR)) as f:
+        data = json.loads(f.read())
+
     pos = 0
     off = 0
-    while True:
-        ui = UserList(info)
+    key = 0
+    while key not in [113, 27]:
+        ui = UserList(data)
         ui.pos = pos
         ui.off = off
         try:
             key = int(ui.main())
         except (KeyboardInterrupt, Exception):
             ui.shutdown()
-            raise
         if key == 10:
             name = ui.users[ui.off+ui.pos]
-            check_list(info[name]['videos'], name, args.s, args.regex,
-                       args.reverse, args.favorite, True)
+            check_list(name)
             ui.screen.refresh()
             off = ui.off
             pos = ui.pos
             continue
-        if key in [113, 27]:
-            ui.shutdown()
-            break
         if key == 115:
             name = ui.users[ui.off+ui.pos]
-            mark_all_watched(info[name]['videos'])
+            mark_all_watched(data[name]['videos'])
             off = ui.off
             pos = ui.pos
             continue
-    with open('{}/data.json'.format(FILE_DIR), 'w') as f:
-        f.write(json.dumps(data))
+    ui.shutdown()
     return None
 
 
 def mark_all_watched(videos):
     """mark_all_watched
-    Marks all of the videos in the list as watched.
+    Marks all of videos as watched.
 
     params:
-        videos: list: A list of videos to mark as watched.
+        videos: list: A list of dictionaries.
     """
     for video in videos:
         video['seen'] = True
     return None
 
 
-def check_list(videos, name, show_seen=False, reg=None, reverse=False,
-               favorite=False, single=False):
-    """check_list
-    Lists all of the videos from a user.
-    """
-    if reverse:
-        videos.reverse()
-    with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
-        settings = json.loads(f.read()) 
-
-    try:
-        ui = VideoList(name, videos, show_seen, reg, favorite)
-        key = ui.main()
-    except KeyboardInterrupt:
-        ui.shutdown()
-    else:
-        ui.shutdown() 
-    
-    if reverse:
-        videos.reverse()
-
-    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
-        data = json.loads(f.read())
-
-    data[name]['videos'] = videos
-
-    with open('{}/data.json'.format(FILE_DIR), 'w') as f:
-        f.write(json.dumps(data))
-    
-    if single:
-        return False
-    size = shutil.get_terminal_size()
-    width = size.columns
-    text = '[C]ontinue. [Q]uit? '
-    cont = input('{}{}'.format(' '*int(width/2-(len(text)/2)), text))
-    cont = cont.lower()
-    if cont == 'c' or cont.strip() == '':
-        return True
-    return False
-
-
-def _remove(*name, args=None):
+def _remove(*name):
     """_remove
-    Removes a specific user from the list.
+    Removes a user from the userlist.
 
     params:
-        *name: tuple: The name of the video.
-        args: Namespace: The other arguments passed.
+        name: tuple: A space separated tuple of the name.
     """
-    name = ' '.join(name)
-    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
-        data = json.loads(f.read())
-
-    close = difflib.get_close_matches(name, data, 1, 0)
-    cprint('Remove [bold]{}[/bold]? [y/n] '.format(close[0]), suffix='[end]')
-    rem = input()
-    if rem != 'y':
+    user = get_user_matches(name)
+    name = list(user.keys())[0]
+    remove = input('Remove {}? [y/n] '.format(name))
+    if remove.lower() != 'y':
         return None
 
-    del data[close[0]]
+    with open('{}/data.json'.format(FILE_DIR), 'r') as f:
+        data = json.loads(f.read())
+
+    del data[name]
+
     with open('{}/data.json'.format(FILE_DIR), 'w') as f:
         f.write(json.dumps(data))
-    cprint('Removed [bold]{}[/bold]'.format(close[0]))
+
+    cprint('Removed [bold]{}[/bold]'.format(name))
     return None
 
 
-def _clear(*_, args=None):
-    """_clear
-    Removes all data.
-    """
-    os.system('rm {}/data.json'.format(FILE_DIR))
-    return None
-
-
-def get_user_videos(user, key, old_videos):
-    resp = make_request('https://www.googleapis.com/youtube/v3/channels?'
-                        'key={}'
-                        '&part=contentDetails&forUsername={}'.format(
-                        key, user))
-    info = json.loads(resp)
-    upload_id = info['items'][0]['contentDetails']['relatedPlaylists']['up'
-                'loads']
-    videos = get_playlist_videos(upload_id, key, old_videos)
-    return videos
-
-
-def get_playlist_videos(pid, key, old_videos):
-    """get_playlist_videos
-    Returns a list of videos from a playlist.
-
-    params:
-        pid: int: The ID of the pid.
-        key: str: The api key the user set.
-    """
-    page_token = None
-    videos = []
-    while True:
-        page_string = ('&pageToken={}'.format(page_token) if page_token
-                       is not None else '')
-        resp = make_request('https://www.googleapis.com/youtube/v3/'
-                            'playlistItems?part=snippet'
-                            '&playlistId'
-                            '={}&maxResults=50&key={}{}'.format(pid,
-                            key, page_string))
-        page_info = json.loads(resp)
-        page_vids = page_info['items']
-        for item in page_vids:
-            data = {'seen': False, 'desc': item['snippet']['description'],
-                    'id': item['snippet']['resourceId']['videoId'],
-                    'title': item['snippet']['title']}
-            videos.append(data)
-            if video_in(data, old_videos):
-                break
-        else:
-            if 'nextPageToken' not in page_info:
-                break
-            page_token = page_info['nextPageToken']
-            continue
-        break
-    return videos
-
-
-def _key(key, args=None):
-    """_key
-    Sets the api key.
-
-    params:
-        key: str: The key to use.
-        args: Namespace: The arguments passed to the script.
-    """
+def _key(key):
     with open('{}/api_key'.format(FILE_DIR), 'w') as f:
         f.write(key)
     print('Set key to {}'.format(key))
     return None
 
 
-def _users(*_, args=None):
+def _users(*_):
     """_users
-    Lists all of the users.
-
-    params:
-        args: Namespace: The other arguments passed to the script.
+    Lists all the users you have added. It will also show how many videos
+    they have and how many you've seen.
     """
     with open('{}/data.json'.format(FILE_DIR)) as f:
         data = json.loads(f.read())
     for user in data:
         length = len(data[user]['videos'])
         seen = len([x for x in data[user]['videos'] if x['seen']])
-        cprint('[bold]{}[/bold] {}/{} (seen/total)'.format(user, seen,
-               length))
-    return None
-
-
-def _setting(setting, *value, args=None):
-    """_setting
-    Adds a setting to the setting file.
-
-    params:
-        setting: str: The key of the setting.
-        *value: tuple: A tuple, which will be joined by space.
-        args: namespace: Other args passed to the script.
-    """
-    value = ' '.join(value)
-    with open('{}/settings.json'.format(FILE_DIR), 'r') as f:
-        settings = json.loads(f.read())
-    settings[setting] = value
-    with open('{}/settings.json'.format(FILE_DIR), 'w') as f:
-        f.write(json.dumps(settings))
+        cprint('[bold]{}[/bold] {}/{} (seen/total)'.format(user, seen, length))
     return None
 
 
 def main():
-    # Create files / dir
-    if not os.path.exists(FILE_DIR):
-        os.mkdir(FILE_DIR)
+    global args
 
-    # Create the default filez.
-    for path in ['data.json', 'settings.json']:
-        fullpath = '{}/{}'.format(FILE_DIR, path)
-        if not os.path.exists(fullpath):
-            with open(fullpath, 'w') as f:
-                f.write('{}')
-
-    # Ugh, argparse.
     parser = argparse.ArgumentParser()
     parser.add_argument('command', nargs='+')
     parser.add_argument('-s',  action='store_true', default=False,
@@ -573,22 +481,50 @@ def main():
                         action='store_true')
     parser.add_argument('-f', '--favorite', default=False, action='store_true',
                         help='Only shows favorited videos.')
-    parser.add_argument('-v', '--version', action='version', version=VERSION)
-    parser.add_argument('-S', '--simple', default=False, action='store_true',
-                        help='Provide simple output for some things.')
+    parser.add_argument('-V', '--version', action='version', version=VERSION)
+    parser.add_argument('-v', '--verbose', default=0, action='count')
     args = parser.parse_args()
+
+    # Create files / dir
+    vprint('Checking for settings directory.', 1)
+    if not os.path.exists(FILE_DIR):
+        vprint('Not found. Creating directory.', 1)
+        os.mkdir(FILE_DIR)
+    else:
+        vprint('Good, still there.', 2)
+
+    vprint('Checking for default files.', 1)
+    # Create the default filez.
+    for path in ['data.json', 'settings.json']:
+        fullpath = '{}/{}'.format(FILE_DIR, path)
+        if not os.path.exists(fullpath):
+            vprint('Creating {}'.format(fullpath), 2)
+            with open(fullpath, 'w') as f:
+                f.write('{}')
+        else:
+            vprint('{} - Check!'.format(path), 2)
 
     # Find any functions that match the command input.
     # If none are found default to list.
 
+    vprint('Finding command: "{}"'.format(args.command[0]), 2)
     command = '_{}'.format(args.command[0])
     params = args.command[1:]
     if command in globals():
-        globals()[command](*params, args=args)
+        vprint('Command: {}\nParams: {}'.format(command, params), 2)
+        try:
+            globals()[command](*params)
+        except KeyboardInterrupt:
+            print('\nOh. Okay. Bye. :c')
     else:
-        _list(*args.command[0:], args=args)
+        vprint("That doesn't look like a command O_o. Using "
+               "'list {}'.".format(args.command[0]), 2)
+        try:
+            _list(*args.command[0:])
+        except KeyboardInterrupt:
+            print('\nOh. Okay. Bye. :c')
     return None
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     main()

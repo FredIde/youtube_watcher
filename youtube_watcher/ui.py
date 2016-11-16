@@ -5,13 +5,14 @@ import curses
 import youtube_dl
 import webbrowser
 import re
-from threads import asthread
+from youtube_watcher.threads import asthread
 
 
 class VoidLogger:
     """VoidLogger
-    Youtube-dl accepts a logger class. This just pass's on all
-    of the messages to prevent the stdout messing up my cli.
+    Youtube-dl accepts a logger class.
+    This just pass's on all of the messages to prevent the stdout 
+    messing up my curses interface.
     """
     def debug(self, msg):
         pass
@@ -139,9 +140,12 @@ class VideoList(ItemList):
         self._vidlist = []
         self.selected = []
         self.active_title = ''
+        
+        if reg is not None:
+            videos = [x for x in videos if re.search(reg, x['title'])]
+
         super().__init__(title, instructions, videos, [], end=4,
-                         show_seen=show_seen, regex=reg,
-                         show_favorite=fav)
+                         show_seen=show_seen, show_favorite=fav)
 
     def draw_items(self):
         videos = self.vidlist[self.off:self.off+self.height-self.end]
@@ -187,9 +191,6 @@ class VideoList(ItemList):
             videolist = self.items
         else:
             videolist = [x for x in self.items if not x['seen']]
-        if self.regex is not None:
-            videolist = [x for x in videolist
-                         if re.search(self.regex, x['title'])]
         if self.show_favorite:
             videolist = [x for x in videolist if x.get('fav')]
         self._vidlist = videolist
@@ -273,6 +274,15 @@ class VideoList(ItemList):
         if self.selected == []:
             return [self._vidlist[self.off+self.pos]]
         return self.selected
+
+    def k_258(self):
+        if self.pos + self.off == len(self.vidlist)-1:
+            return None
+        self.pos += 1
+        if self.pos == self.height-self.end:
+            self.pos -= 1
+            self.off += 1
+        return None
 
     def k_32(self):
         title = self._vidlist[self.off+self.pos]
