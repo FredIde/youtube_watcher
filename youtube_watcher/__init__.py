@@ -371,6 +371,13 @@ def check_list(username):
 
 
 def _list(*user):
+    """_list
+    Lists users or lists their videos. If the username is found
+    it will only list their videos. Otherwise it will list all users.
+
+    params:
+        user: tuple: A space separated tuple of the username.
+    """
     users = get_user_matches(user)
     if len(users) == 1:
         name = list(users.keys())[0]
@@ -467,6 +474,8 @@ def _users(*_):
 
 
 def main():
+    # I didn't want to do this, though, it's better than passing args
+    # into every other function.
     global args
 
     parser = argparse.ArgumentParser()
