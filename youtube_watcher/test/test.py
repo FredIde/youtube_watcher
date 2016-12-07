@@ -4,7 +4,7 @@
 import youtube_watcher
 
 
-with open('api_key', 'r') as f:
+with open('youtube_watcher/test/api_key', 'r') as f:
     API_KEY = f.read()
 
 class Dummy:
